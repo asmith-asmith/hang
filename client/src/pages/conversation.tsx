@@ -7,18 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import type { Match, User, Message } from "@shared/schema";
 
 export default function Conversation() {
   const { matchId } = useParams();
-  const [currentUserId] = useState("user-1");
+  const { user } = useAuth();
+  const currentUserId = user!.id;
   const [newMessage, setNewMessage] = useState("");
   const { toast } = useToast();
 
   const { data: match } = useQuery<Match>({
     queryKey: ["/api/matches", matchId],
     queryFn: async () => {
-      const res = await fetch(`/api/matches/${matchId}`);
+      const res = await fetch(`/api/matches/${matchId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Match not found");
       return res.json();
     },
@@ -28,20 +30,25 @@ export default function Conversation() {
   const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
     queryKey: ["/api/matches", matchId, "messages"],
     queryFn: async () => {
-      const res = await fetch(`/api/matches/${matchId}/messages`);
+      const res = await fetch(`/api/matches/${matchId}/messages`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
     enabled: !!matchId
   });
 
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+  const otherUserId = match
+    ? (match.user1Id === currentUserId ? match.user2Id : match.user1Id)
+    : undefined;
+
+  const { data: otherUser } = useQuery<User>({
+    queryKey: ["/api/users", otherUserId],
     queryFn: async () => {
-      const res = await fetch("/api/users");
-      if (!res.ok) return [];
+      const res = await fetch(`/api/users/${otherUserId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("User not found");
       return res.json();
-    }
+    },
+    enabled: !!otherUserId
   });
 
   const sendMessageMutation = useMutation({
@@ -49,7 +56,6 @@ export default function Conversation() {
       if (!matchId) throw new Error("No match ID");
       return apiRequest("POST", "/api/messages", {
         matchId,
-        senderId: currentUserId,
         content
       });
     },
@@ -71,11 +77,6 @@ export default function Conversation() {
     if (!newMessage.trim()) return;
     sendMessageMutation.mutate(newMessage.trim());
   };
-
-  const otherUser = match && users.find(user => {
-    const otherUserId = match.user1Id === currentUserId ? match.user2Id : match.user1Id;
-    return user.id === otherUserId;
-  });
 
   if (!matchId) {
     return (
@@ -143,7 +144,7 @@ export default function Conversation() {
         ) : (
           messages.map((message) => {
             const isCurrentUser = message.senderId === currentUserId;
-            
+
             return (
               <div
                 key={message.id}
@@ -182,8 +183,8 @@ export default function Conversation() {
             disabled={sendMessageMutation.isPending}
             data-testid="input-message"
           />
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             size="sm"
             disabled={!newMessage.trim() || sendMessageMutation.isPending}
             data-testid="button-send-message"

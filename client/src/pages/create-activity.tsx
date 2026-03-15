@@ -60,7 +60,7 @@ export default function CreateActivity() {
       dateTime: "",
       maxParticipants: 10,
       neighborhood: "",
-      createdByUserId: "user-1", // In a real app, this would come from auth
+      createdByUserId: undefined,
     },
   });
 

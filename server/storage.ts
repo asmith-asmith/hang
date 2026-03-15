@@ -1,7 +1,12 @@
-import { 
-  type User, 
-  type InsertUser, 
-  type Activity, 
+import {
+  users,
+  activities,
+  userActivityInterests,
+  matches,
+  messages,
+  type User,
+  type InsertUser,
+  type Activity,
   type InsertActivity,
   type UserActivityInterest,
   type InsertUserActivityInterest,
@@ -11,34 +16,44 @@ import {
   type InsertMessage
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { eq, or, and, inArray } from "drizzle-orm";
+import type { db as DbType } from "./db";
+
+export type CreateUserData = {
+  username: string;
+  password: string;
+  name: string;
+  age: number;
+};
 
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: CreateUserData): Promise<User>;
   updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
-  
+
   // Activity operations
   getActivities(): Promise<Activity[]>;
   getActivity(id: string): Promise<Activity | undefined>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   getActivitiesByCategory(category: string): Promise<Activity[]>;
-  
+
   // User activity interest operations
   createUserActivityInterest(interest: InsertUserActivityInterest): Promise<UserActivityInterest>;
   getUserActivityInterests(userId: string): Promise<UserActivityInterest[]>;
   getActivityInterests(activityId: string): Promise<UserActivityInterest[]>;
-  
+
   // Match operations
   createMatch(match: InsertMatch): Promise<Match>;
   getUserMatches(userId: string): Promise<Match[]>;
   getMatch(id: string): Promise<Match | undefined>;
   updateMatchStatus(id: string, status: string): Promise<Match | undefined>;
-  
+
   // Message operations
   createMessage(message: InsertMessage): Promise<Message>;
   getMatchMessages(matchId: string): Promise<Message[]>;
-  
+
   // Discovery operations
   getPotentialMatches(userId: string): Promise<User[]>;
 }
@@ -55,7 +70,6 @@ export class MemStorage implements IStorage {
   }
 
   private seedData() {
-    // Seed some NYC activities
     const nycActivities: InsertActivity[] = [
       {
         title: "Brooklyn Bridge Park Picnic",
@@ -116,9 +130,9 @@ export class MemStorage implements IStorage {
 
     nycActivities.forEach(activity => {
       const id = randomUUID();
-      this.activities.set(id, { 
-        ...activity, 
-        id, 
+      this.activities.set(id, {
+        ...activity,
+        id,
         rating: 5,
         price: activity.price || "Free",
         maxParticipants: activity.maxParticipants || 10,
@@ -131,16 +145,23 @@ export class MemStorage implements IStorage {
     return this.users.get(id);
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(u => u.username === username);
+  }
+
+  async createUser(data: CreateUserData): Promise<User> {
     const id = randomUUID();
-    const user: User = { 
-      ...insertUser, 
+    const user: User = {
       id,
-      location: insertUser.location || "Manhattan, NY",
-      interests: insertUser.interests || [],
-      bio: insertUser.bio || null,
-      photoUrl: insertUser.photoUrl || null,
-      isProfileComplete: !!(insertUser.name && insertUser.age && insertUser.interests?.length)
+      username: data.username,
+      password: data.password,
+      name: data.name,
+      age: data.age,
+      location: "Manhattan, NY",
+      interests: [],
+      bio: null,
+      photoUrl: null,
+      isProfileComplete: false,
     };
     this.users.set(id, user);
     return user;
@@ -149,12 +170,12 @@ export class MemStorage implements IStorage {
   async updateUser(id: string, updates: Partial<InsertUser>): Promise<User | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
-    
-    const updatedUser: User = { 
-      ...user, 
+
+    const updatedUser: User = {
+      ...user,
       ...updates,
-      isProfileComplete: !!(updates.name || user.name) && 
-                        !!(updates.age || user.age) && 
+      isProfileComplete: !!(updates.name || user.name) &&
+                        !!(updates.age || user.age) &&
                         !!((updates.interests && updates.interests.length > 0) || (user.interests && user.interests.length > 0))
     };
     this.users.set(id, updatedUser);
@@ -171,9 +192,9 @@ export class MemStorage implements IStorage {
 
   async createActivity(insertActivity: InsertActivity): Promise<Activity> {
     const id = randomUUID();
-    const activity: Activity = { 
-      ...insertActivity, 
-      id, 
+    const activity: Activity = {
+      ...insertActivity,
+      id,
       rating: 5,
       price: insertActivity.price || "Free",
       maxParticipants: insertActivity.maxParticipants || 10,
@@ -189,8 +210,8 @@ export class MemStorage implements IStorage {
 
   async createUserActivityInterest(insertInterest: InsertUserActivityInterest): Promise<UserActivityInterest> {
     const id = randomUUID();
-    const interest: UserActivityInterest = { 
-      ...insertInterest, 
+    const interest: UserActivityInterest = {
+      ...insertInterest,
       id,
       isInterested: insertInterest.isInterested ?? true
     };
@@ -208,9 +229,9 @@ export class MemStorage implements IStorage {
 
   async createMatch(insertMatch: InsertMatch): Promise<Match> {
     const id = randomUUID();
-    const match: Match = { 
-      ...insertMatch, 
-      id, 
+    const match: Match = {
+      ...insertMatch,
+      id,
       status: "pending",
       activityId: insertMatch.activityId || null
     };
@@ -219,7 +240,7 @@ export class MemStorage implements IStorage {
   }
 
   async getUserMatches(userId: string): Promise<Match[]> {
-    return Array.from(this.matches.values()).filter(match => 
+    return Array.from(this.matches.values()).filter(match =>
       match.user1Id === userId || match.user2Id === userId
     );
   }
@@ -231,7 +252,7 @@ export class MemStorage implements IStorage {
   async updateMatchStatus(id: string, status: string): Promise<Match | undefined> {
     const match = this.matches.get(id);
     if (!match) return undefined;
-    
+
     const updatedMatch: Match = { ...match, status };
     this.matches.set(id, updatedMatch);
     return updatedMatch;
@@ -239,10 +260,10 @@ export class MemStorage implements IStorage {
 
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
     const id = randomUUID();
-    const message: Message = { 
-      ...insertMessage, 
-      id, 
-      timestamp: new Date().toISOString() 
+    const message: Message = {
+      ...insertMessage,
+      id,
+      timestamp: new Date().toISOString()
     };
     this.messages.set(id, message);
     return message;
@@ -261,19 +282,17 @@ export class MemStorage implements IStorage {
     const userInterests = await this.getUserActivityInterests(userId);
     const userActivityIds = userInterests.map(interest => interest.activityId);
 
-    // Find users who are interested in similar activities
     const potentialMatches: User[] = [];
     for (const [otherUserId, otherUser] of Array.from(this.users.entries())) {
       if (otherUserId === userId) continue;
-      
+
       const otherUserInterests = await this.getUserActivityInterests(otherUserId);
       const otherUserActivityIds = otherUserInterests.map(interest => interest.activityId);
-      
-      // Check for shared activity interests
-      const sharedActivities = userActivityIds.filter(activityId => 
+
+      const sharedActivities = userActivityIds.filter(activityId =>
         otherUserActivityIds.includes(activityId)
       );
-      
+
       if (sharedActivities.length > 0) {
         potentialMatches.push(otherUser);
       }
@@ -283,4 +302,148 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class DatabaseStorage implements IStorage {
+  constructor(private db: typeof DbType) {}
+
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await this.db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await this.db.select().from(users).where(eq(users.name, username));
+    return user;
+  }
+
+  async createUser(data: CreateUserData): Promise<User> {
+    const [user] = await this.db.insert(users).values({
+      username: data.username,
+      password: data.password,
+      name: data.name,
+      age: data.age,
+    }).returning();
+    return user;
+  }
+
+  async updateUser(id: string, updates: Partial<InsertUser>): Promise<User | undefined> {
+    const existing = await this.getUser(id);
+    if (!existing) return undefined;
+
+    const isProfileComplete = !!(updates.name || existing.name) &&
+      !!(updates.age || existing.age) &&
+      !!((updates.interests && updates.interests.length > 0) || (existing.interests && existing.interests.length > 0));
+
+    const [user] = await this.db.update(users)
+      .set({ ...updates, isProfileComplete })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async getActivities(): Promise<Activity[]> {
+    return this.db.select().from(activities);
+  }
+
+  async getActivity(id: string): Promise<Activity | undefined> {
+    const [activity] = await this.db.select().from(activities).where(eq(activities.id, id));
+    return activity;
+  }
+
+  async createActivity(insertActivity: InsertActivity): Promise<Activity> {
+    const [activity] = await this.db.insert(activities).values(insertActivity).returning();
+    return activity;
+  }
+
+  async getActivitiesByCategory(category: string): Promise<Activity[]> {
+    return this.db.select().from(activities).where(eq(activities.category, category));
+  }
+
+  async createUserActivityInterest(insertInterest: InsertUserActivityInterest): Promise<UserActivityInterest> {
+    const [interest] = await this.db.insert(userActivityInterests).values(insertInterest).returning();
+    return interest;
+  }
+
+  async getUserActivityInterests(userId: string): Promise<UserActivityInterest[]> {
+    return this.db.select().from(userActivityInterests).where(eq(userActivityInterests.userId, userId));
+  }
+
+  async getActivityInterests(activityId: string): Promise<UserActivityInterest[]> {
+    return this.db.select().from(userActivityInterests).where(eq(userActivityInterests.activityId, activityId));
+  }
+
+  async createMatch(insertMatch: InsertMatch): Promise<Match> {
+    const [match] = await this.db.insert(matches).values(insertMatch).returning();
+    return match;
+  }
+
+  async getUserMatches(userId: string): Promise<Match[]> {
+    return this.db.select().from(matches).where(
+      or(eq(matches.user1Id, userId), eq(matches.user2Id, userId))
+    );
+  }
+
+  async getMatch(id: string): Promise<Match | undefined> {
+    const [match] = await this.db.select().from(matches).where(eq(matches.id, id));
+    return match;
+  }
+
+  async updateMatchStatus(id: string, status: string): Promise<Match | undefined> {
+    const [match] = await this.db.update(matches)
+      .set({ status })
+      .where(eq(matches.id, id))
+      .returning();
+    return match;
+  }
+
+  async createMessage(insertMessage: InsertMessage): Promise<Message> {
+    const [message] = await this.db.insert(messages).values({
+      ...insertMessage,
+      timestamp: new Date().toISOString(),
+    }).returning();
+    return message;
+  }
+
+  async getMatchMessages(matchId: string): Promise<Message[]> {
+    return this.db.select().from(messages)
+      .where(eq(messages.matchId, matchId))
+      .orderBy(messages.timestamp);
+  }
+
+  async getPotentialMatches(userId: string): Promise<User[]> {
+    const userInterests = await this.getUserActivityInterests(userId);
+    const userActivityIds = userInterests.map(i => i.activityId);
+
+    if (userActivityIds.length === 0) return [];
+
+    // Find other users interested in the same activities
+    const otherInterests = await this.db.select()
+      .from(userActivityInterests)
+      .where(
+        and(
+          inArray(userActivityInterests.activityId, userActivityIds),
+          // Exclude the current user's own interests
+          eq(userActivityInterests.isInterested, true)
+        )
+      );
+
+    const otherUserIds = [...new Set(
+      otherInterests
+        .map(i => i.userId)
+        .filter(id => id !== userId)
+    )];
+
+    if (otherUserIds.length === 0) return [];
+
+    return this.db.select().from(users).where(inArray(users.id, otherUserIds));
+  }
+}
+
+// Use DatabaseStorage when DATABASE_URL is available, otherwise fall back to MemStorage
+let storageInstance: IStorage;
+if (process.env.DATABASE_URL) {
+  const { db } = await import("./db");
+  storageInstance = new DatabaseStorage(db);
+} else {
+  storageInstance = new MemStorage();
+}
+export const storage: IStorage = storageInstance;

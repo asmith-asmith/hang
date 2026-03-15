@@ -10,8 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { insertUserSchema } from "@shared/schema";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { z } from "zod";
 
 const profileFormSchema = insertUserSchema.extend({
@@ -22,7 +23,7 @@ type ProfileFormData = z.infer<typeof profileFormSchema>;
 
 const interestOptions = [
   "Food & Dining",
-  "Outdoor Activities", 
+  "Outdoor Activities",
   "Arts & Culture",
   "Fitness & Sports",
   "Nightlife",
@@ -36,45 +37,47 @@ const interestOptions = [
 export default function ProfileSetup() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [photoUrl, setPhotoUrl] = useState<string>("");
+  const { user } = useAuth();
+  const [photoUrl, setPhotoUrl] = useState<string>(user?.photoUrl || "");
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
-      name: "",
-      age: 25,
-      bio: "",
-      location: "Manhattan, NY",
-      interests: [],
-      photoUrl: "",
+      name: user?.name || "",
+      age: user?.age || 25,
+      bio: user?.bio || "",
+      location: user?.location || "Manhattan, NY",
+      interests: user?.interests || [],
+      photoUrl: user?.photoUrl || "",
     },
   });
 
-  const createUserMutation = useMutation({
+  const updateProfileMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => {
-      return apiRequest("POST", "/api/users", {
+      return apiRequest("PATCH", `/api/users/${user!.id}`, {
         ...data,
         photoUrl: photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name}`,
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       toast({
-        title: "Profile created!",
-        description: "Welcome to FriendSync. Let's find you some activity partners!",
+        title: "Profile updated!",
+        description: "Your profile has been saved.",
       });
       setLocation("/");
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to create profile. Please try again.",
+        description: "Failed to update profile. Please try again.",
         variant: "destructive",
       });
     },
   });
 
   const onSubmit = (data: ProfileFormData) => {
-    createUserMutation.mutate(data);
+    updateProfileMutation.mutate(data);
   };
 
   const handleSkip = () => {
@@ -100,9 +103,9 @@ export default function ProfileSetup() {
                   <Camera className="w-8 h-8 text-muted-foreground" />
                 )}
               </div>
-              <Button 
-                type="button" 
-                variant="link" 
+              <Button
+                type="button"
+                variant="link"
                 size="sm"
                 onClick={() => {
                   const name = form.getValues("name") || "user";
@@ -122,9 +125,9 @@ export default function ProfileSetup() {
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
-                      <Input 
-                        placeholder="Your name" 
-                        {...field} 
+                      <Input
+                        placeholder="Your name"
+                        {...field}
                         data-testid="input-name"
                       />
                     </FormControl>
@@ -139,9 +142,9 @@ export default function ProfileSetup() {
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
-                      <Input 
-                        type="number" 
-                        placeholder="Age" 
+                      <Input
+                        type="number"
+                        placeholder="Age"
                         {...field}
                         onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
                         data-testid="input-age"
@@ -158,8 +161,8 @@ export default function ProfileSetup() {
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
-                      <Textarea 
-                        placeholder="Brief bio (optional)" 
+                      <Textarea
+                        placeholder="Brief bio (optional)"
                         rows={3}
                         className="resize-none"
                         {...field}
@@ -214,22 +217,22 @@ export default function ProfileSetup() {
             />
 
             <div className="flex space-x-3 pt-4">
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 className="flex-1"
                 onClick={handleSkip}
                 data-testid="button-skip"
               >
                 Skip for now
               </Button>
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="flex-1"
-                disabled={createUserMutation.isPending}
+                disabled={updateProfileMutation.isPending}
                 data-testid="button-save-profile"
               >
-                {createUserMutation.isPending ? "Saving..." : "Save Profile"}
+                {updateProfileMutation.isPending ? "Saving..." : "Save Profile"}
               </Button>
             </div>
           </form>

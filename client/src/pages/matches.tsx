@@ -1,31 +1,23 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState } from "react";
 import { Link } from "wouter";
 import { ArrowLeft, MessageCircle, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import BottomNavigation from "@/components/bottom-navigation";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import type { Match, User } from "@shared/schema";
 
 export default function Matches() {
-  const [currentUserId] = useState("user-1");
+  const { user } = useAuth();
+  const currentUserId = user!.id;
   const { toast } = useToast();
 
   const { data: matches = [], isLoading } = useQuery<Match[]>({
     queryKey: ["/api/users", currentUserId, "matches"],
     queryFn: async () => {
-      const res = await fetch(`/api/users/${currentUserId}/matches`);
+      const res = await fetch(`/api/users/${currentUserId}/matches`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch matches");
-      return res.json();
-    }
-  });
-
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-    queryFn: async () => {
-      const res = await fetch("/api/users");
-      if (!res.ok) return [];
       return res.json();
     }
   });
@@ -60,9 +52,8 @@ export default function Matches() {
     }
   });
 
-  const getOtherUser = (match: Match): User | undefined => {
-    const otherUserId = match.user1Id === currentUserId ? match.user2Id : match.user1Id;
-    return users.find(user => user.id === otherUserId);
+  const getOtherUserId = (match: Match): string => {
+    return match.user1Id === currentUserId ? match.user2Id : match.user1Id;
   };
 
   const pendingMatches = matches.filter(match => match.status === "pending");
@@ -97,7 +88,7 @@ export default function Matches() {
           </Button>
         </Link>
         <h2 className="font-bold text-lg">Matches</h2>
-        <div className="w-10" /> {/* Spacer */}
+        <div className="w-10" />
       </header>
 
       <div className="p-4 pb-24">
@@ -107,56 +98,18 @@ export default function Matches() {
             <h3 className="font-semibold text-sm mb-3 text-muted-foreground">New Matches</h3>
             <div className="space-y-3">
               {pendingMatches.map((match) => {
-                const otherUser = getOtherUser(match);
-                if (!otherUser) return null;
-
+                const otherUserId = getOtherUserId(match);
                 return (
-                  <div key={match.id} className="bg-card border border-border rounded-lg p-4">
-                    <div className="flex items-center space-x-3 mb-3">
-                      <img
-                        src={otherUser.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${otherUser.name}`}
-                        alt={otherUser.name}
-                        className="w-12 h-12 rounded-full object-cover"
-                        data-testid={`match-user-photo-${match.id}`}
-                      />
-                      <div className="flex-1">
-                        <h4 className="font-semibold" data-testid={`match-user-name-${match.id}`}>
-                          {otherUser.name}, {otherUser.age}
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                          {otherUser.location}
-                        </p>
-                      </div>
-                    </div>
-
-                    {otherUser.bio && (
-                      <p className="text-sm text-muted-foreground mb-3">
-                        {otherUser.bio}
-                      </p>
-                    )}
-
-                    <div className="flex space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => rejectMatchMutation.mutate(match.id)}
-                        disabled={rejectMatchMutation.isPending}
-                        data-testid={`button-reject-${match.id}`}
-                      >
-                        Decline
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => acceptMatchMutation.mutate(match.id)}
-                        disabled={acceptMatchMutation.isPending}
-                        data-testid={`button-accept-${match.id}`}
-                      >
-                        Accept
-                      </Button>
-                    </div>
-                  </div>
+                  <MatchUserCard
+                    key={match.id}
+                    userId={otherUserId}
+                    match={match}
+                    onAccept={() => acceptMatchMutation.mutate(match.id)}
+                    onReject={() => rejectMatchMutation.mutate(match.id)}
+                    isPending
+                    acceptDisabled={acceptMatchMutation.isPending}
+                    rejectDisabled={rejectMatchMutation.isPending}
+                  />
                 );
               })}
             </div>
@@ -169,34 +122,13 @@ export default function Matches() {
             <h3 className="font-semibold text-sm mb-3 text-muted-foreground">Connected Friends</h3>
             <div className="space-y-3">
               {acceptedMatches.map((match) => {
-                const otherUser = getOtherUser(match);
-                if (!otherUser) return null;
-
+                const otherUserId = getOtherUserId(match);
                 return (
-                  <div key={match.id} className="bg-card border border-border rounded-lg p-4">
-                    <div className="flex items-center space-x-3">
-                      <img
-                        src={otherUser.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${otherUser.name}`}
-                        alt={otherUser.name}
-                        className="w-12 h-12 rounded-full object-cover"
-                        data-testid={`connected-user-photo-${match.id}`}
-                      />
-                      <div className="flex-1">
-                        <h4 className="font-semibold" data-testid={`connected-user-name-${match.id}`}>
-                          {otherUser.name}, {otherUser.age}
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                          {otherUser.location}
-                        </p>
-                      </div>
-                      <Link href={`/conversation/${match.id}`}>
-                        <Button size="sm" data-testid={`button-message-${match.id}`}>
-                          <MessageCircle className="w-4 h-4 mr-2" />
-                          Message
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
+                  <MatchUserCard
+                    key={match.id}
+                    userId={otherUserId}
+                    match={match}
+                  />
                 );
               })}
             </div>
@@ -221,6 +153,91 @@ export default function Matches() {
       </div>
 
       <BottomNavigation />
+    </div>
+  );
+}
+
+function MatchUserCard({
+  userId,
+  match,
+  onAccept,
+  onReject,
+  isPending,
+  acceptDisabled,
+  rejectDisabled,
+}: {
+  userId: string;
+  match: Match;
+  onAccept?: () => void;
+  onReject?: () => void;
+  isPending?: boolean;
+  acceptDisabled?: boolean;
+  rejectDisabled?: boolean;
+}) {
+  const { data: otherUser } = useQuery<User>({
+    queryKey: ["/api/users", userId],
+    queryFn: async () => {
+      const res = await fetch(`/api/users/${userId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("User not found");
+      return res.json();
+    },
+  });
+
+  if (!otherUser) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center space-x-3 mb-3">
+        <img
+          src={otherUser.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${otherUser.name}`}
+          alt={otherUser.name}
+          className="w-12 h-12 rounded-full object-cover"
+        />
+        <div className="flex-1">
+          <h4 className="font-semibold">
+            {otherUser.name}, {otherUser.age}
+          </h4>
+          <p className="text-sm text-muted-foreground">
+            {otherUser.location}
+          </p>
+        </div>
+        {!isPending && (
+          <Link href={`/conversation/${match.id}`}>
+            <Button size="sm">
+              <MessageCircle className="w-4 h-4 mr-2" />
+              Message
+            </Button>
+          </Link>
+        )}
+      </div>
+
+      {otherUser.bio && (
+        <p className="text-sm text-muted-foreground mb-3">
+          {otherUser.bio}
+        </p>
+      )}
+
+      {isPending && onAccept && onReject && (
+        <div className="flex space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={onReject}
+            disabled={rejectDisabled}
+          >
+            Decline
+          </Button>
+          <Button
+            size="sm"
+            className="flex-1"
+            onClick={onAccept}
+            disabled={acceptDisabled}
+          >
+            Accept
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

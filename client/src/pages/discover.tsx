@@ -8,11 +8,12 @@ import UserMatchCard from "@/components/user-match-card";
 import BottomNavigation from "@/components/bottom-navigation";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import type { Activity, User } from "@shared/schema";
 
 export default function Discover() {
   const [selectedCategory, setSelectedCategory] = useState("Food & Dining");
-  const [currentUserId] = useState("user-1"); // In a real app, this would come from auth
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const categories = [
@@ -33,9 +34,9 @@ export default function Discover() {
   });
 
   const { data: potentialMatches = [] } = useQuery<User[]>({
-    queryKey: ["/api/users", currentUserId, "potential-matches"],
+    queryKey: ["/api/users", user!.id, "potential-matches"],
     queryFn: async () => {
-      const res = await fetch(`/api/users/${currentUserId}/potential-matches`);
+      const res = await fetch(`/api/users/${user!.id}/potential-matches`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     }
@@ -44,7 +45,6 @@ export default function Discover() {
   const interestMutation = useMutation({
     mutationFn: async (activityId: string) => {
       return apiRequest("POST", "/api/user-activity-interests", {
-        userId: currentUserId,
         activityId,
         isInterested: true
       });
@@ -54,14 +54,13 @@ export default function Discover() {
         title: "Interest recorded!",
         description: "We'll help you find friends with similar interests.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/users", currentUserId, "potential-matches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", user!.id, "potential-matches"] });
     }
   });
 
   const connectMutation = useMutation({
     mutationFn: async (userId: string) => {
       return apiRequest("POST", "/api/matches", {
-        user1Id: currentUserId,
         user2Id: userId
       });
     },
@@ -70,13 +69,13 @@ export default function Discover() {
         title: "Connection request sent!",
         description: "You'll be notified if they're interested too.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/users", currentUserId, "matches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", user!.id, "matches"] });
     }
   });
 
-  const filteredActivities = activities.filter(activity => 
-    selectedCategory === "Food & Dining" ? 
-      activity.category === "Food & Dining" : 
+  const filteredActivities = activities.filter(activity =>
+    selectedCategory === "Food & Dining" ?
+      activity.category === "Food & Dining" :
       activity.category === selectedCategory
   );
 
@@ -119,17 +118,17 @@ export default function Discover() {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <Button 
-              size="sm" 
-              variant="ghost" 
+            <Button
+              size="sm"
+              variant="ghost"
               className="w-10 h-10 bg-white/20 glass-effect hover:bg-white/30"
               data-testid="button-settings"
             >
               <Settings className="w-4 h-4" />
             </Button>
-            <Button 
-              size="sm" 
-              variant="ghost" 
+            <Button
+              size="sm"
+              variant="ghost"
               className="w-10 h-10 bg-white/20 glass-effect hover:bg-white/30"
               data-testid="button-notifications"
             >
@@ -137,10 +136,10 @@ export default function Discover() {
             </Button>
           </div>
         </div>
-        
+
         <div className="flex items-center mt-3 space-x-2">
           <MapPin className="w-4 h-4" />
-          <span className="text-sm opacity-90">Manhattan, NY</span>
+          <span className="text-sm opacity-90">{user?.location || "Manhattan, NY"}</span>
           <Button variant="link" className="text-sm underline opacity-90 p-0 h-auto text-primary-foreground">
             Change
           </Button>
@@ -173,11 +172,11 @@ export default function Discover() {
       {/* Content */}
       <div className="p-4 space-y-4 pb-24">
         {/* Activity Cards */}
-        {filteredActivities.map((activity, index) => (
+        {filteredActivities.map((activity) => (
           <ActivityCard
             key={activity.id}
             activity={activity}
-            interestedUsers={[]} // Would be populated from API
+            interestedUsers={[]}
             onInterested={() => interestMutation.mutate(activity.id)}
             onPass={() => {
               toast({
@@ -189,12 +188,12 @@ export default function Discover() {
         ))}
 
         {/* User Match Cards */}
-        {potentialMatches.slice(0, 2).map((user) => (
+        {potentialMatches.slice(0, 2).map((matchUser) => (
           <UserMatchCard
-            key={user.id}
-            user={user}
-            sharedInterests={user.interests?.slice(0, 4) || []}
-            onConnect={() => connectMutation.mutate(user.id)}
+            key={matchUser.id}
+            user={matchUser}
+            sharedInterests={matchUser.interests?.slice(0, 4) || []}
+            onConnect={() => connectMutation.mutate(matchUser.id)}
             onPass={() => {
               toast({
                 title: "User passed",
@@ -226,7 +225,7 @@ export default function Discover() {
 
       {/* Floating Action Button */}
       <Link href="/create-activity">
-        <Button 
+        <Button
           className="floating-action fixed bottom-20 right-4 w-14 h-14 bg-accent text-accent-foreground rounded-full hover:bg-accent/90"
           data-testid="button-floating-create"
         >

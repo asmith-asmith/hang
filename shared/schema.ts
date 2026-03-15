@@ -5,6 +5,8 @@ import { z } from "zod";
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
   name: text("name").notNull(),
   age: integer("age").notNull(),
   bio: text("bio"),
@@ -55,6 +57,8 @@ export const messages = pgTable("messages", {
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   isProfileComplete: true,
+  password: true,
+  username: true,
 });
 
 export const insertActivitySchema = createInsertSchema(activities).omit({
