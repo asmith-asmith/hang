@@ -311,7 +311,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await this.db.select().from(users).where(eq(users.name, username));
+    const [user] = await this.db.select().from(users).where(eq(users.username, username));
     return user;
   }
 
