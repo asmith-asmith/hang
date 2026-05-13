@@ -134,6 +134,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/matches/:id", requireAuth, async (req, res) => {
+    try {
+      const match = await storage.getMatch(req.params.id);
+      if (!match) {
+        return res.status(404).json({ message: "Match not found" });
+      }
+      res.json(match);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching match", error });
+    }
+  });
+
   app.patch("/api/matches/:id", requireAuth, async (req, res) => {
     try {
       const { status } = req.body;
